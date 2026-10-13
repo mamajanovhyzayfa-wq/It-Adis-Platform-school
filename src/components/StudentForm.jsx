@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import confetti from 'canvas-confetti';
 
 export default function StudentForm({ onLogin }) {
-  const [studentCode, setStudentCode] = useState(''); 
+  const [studentCode, setStudentCode] = useState('');
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,22 +23,24 @@ export default function StudentForm({ onLogin }) {
           setStudentStats(parsed);
           setIsRegistered(true);
           if (onLogin) onLogin(parsed);
-          
-          const codeToFetch = parsed.code || parsed.student_code;
+
+          const codeToFetch = parsed.student_code || parsed.code;
           if (codeToFetch) {
             supabase
               .from('students')
-              .select('xp, level')
+              .select('xp, level, avatar, group_name')
               .eq('student_code', codeToFetch)
               .maybeSingle()
               .then(({ data }) => {
                 if (data) {
-                  setStudentStats(prev => {
+                  setStudentStats((prev) => {
                     const updated = {
                       ...prev,
                       totalXp: data.xp,
                       xp: data.xp,
-                      level: data.level
+                      level: data.level,
+                      avatar: data.avatar || prev?.avatar,
+                      group_name: data.group_name || prev?.group_name,
                     };
                     localStorage.setItem('app_student', JSON.stringify(updated));
                     if (onLogin) onLogin(updated);
@@ -53,6 +55,18 @@ export default function StudentForm({ onLogin }) {
       }
     }
   }, []);
+
+  // ИСПРАВЛЕНО: раньше нельзя было сменить ученика без ручной чистки localStorage
+  const handleResetSession = () => {
+    localStorage.removeItem('app_checkin_date');
+    localStorage.removeItem('app_student');
+    setIsRegistered(false);
+    setStudentStats(null);
+    setStudentCode('');
+    setName('');
+    setPin('');
+    if (onLogin) onLogin(null);
+  };
 
   const generateUnique6DigitCode = async () => {
     for (let i = 0; i < 10; i++) {
@@ -71,7 +85,7 @@ export default function StudentForm({ onLogin }) {
   const handleCheckIn = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setMessage(null);  
+    setMessage(null);
 
     const trimmedCode = studentCode.trim();
     const trimmedName = name.trim();
@@ -129,13 +143,25 @@ export default function StudentForm({ onLogin }) {
 
         await supabase
           .from('students')
-          .update({ name: trimmedName, student_code: finalCode, xp: newTotalXp, level: newLevel })
+          .update({
+            name: trimmedName,
+            student_code: finalCode,
+            xp: newTotalXp,
+            level: newLevel,
+            group_name: student.group_name || activeLesson.group_name || 'Общая',
+          })
           .eq('id', student.id);
       } else {
         finalCode = await generateUnique6DigitCode();
         const { data: newStudent } = await supabase
           .from('students')
-          .insert([{ student_code: finalCode, name: trimmedName, xp: newTotalXp, level: newLevel }])
+          .insert([{
+            student_code: finalCode,
+            name: trimmedName,
+            xp: newTotalXp,
+            level: newLevel,
+            group_name: activeLesson.group_name || 'Общая',
+          }])
           .select()
           .single();
         if (newStudent) student = newStudent;
@@ -148,8 +174,8 @@ export default function StudentForm({ onLogin }) {
           status: 'Присутствует',
           group_name: activeLesson.group_name || 'Общая',
           xp_earned: earnedXp,
-          created_at: new Date().toISOString()
-        }
+          created_at: new Date().toISOString(),
+        },
       ]);
 
       confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
@@ -163,7 +189,7 @@ export default function StudentForm({ onLogin }) {
         xp: newTotalXp,
         level: newLevel,
         group_name: activeLesson.group_name || 'Общая',
-        avatar: student?.avatar || '🌱'
+        avatar: student?.avatar || '🌱',
       };
 
       localStorage.setItem('app_checkin_date', new Date().toDateString());
@@ -172,7 +198,6 @@ export default function StudentForm({ onLogin }) {
       setStudentStats(studentData);
       setIsRegistered(true);
       if (onLogin) onLogin(studentData);
-
     } catch (err) {
       console.error(err);
       setMessage({ text: 'Ошибка при подключении к серверу', type: 'error' });
@@ -193,9 +218,9 @@ export default function StudentForm({ onLogin }) {
               Имя: <b style={{ color: '#FFF' }}>{studentStats.name}</b>
             </div>
             <div>
-              Ваш логин: <b style={{ color: '#FACC15' }}>{studentStats.code || studentStats.student_code}</b>
+              Ваш логин: <b style={{ color: '#FACC15' }}>{studentStats.student_code || studentStats.code}</b>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '6px', flexWrap: 'wrap' }}>
               <span style={{ backgroundColor: '#1E293B', padding: '6px 12px', borderRadius: '8px', border: '1px solid #334155' }}>
                 ⭐ Уровень: <b style={{ color: '#A78BFA' }}>{studentStats.level || 1}</b>
               </span>
@@ -205,6 +230,9 @@ export default function StudentForm({ onLogin }) {
             </div>
           </div>
         )}
+        <button onClick={handleResetSession} style={styles.resetBtn}>
+          🔄 Выйти / сменить ученика
+        </button>
       </div>
     );
   }
@@ -270,5 +298,6 @@ const styles = {
   label: { fontSize: '12px', color: '#94A3B8', display: 'block', marginBottom: '4px' },
   input: { width: '100%', backgroundColor: '#0F172A', border: '1px solid #334155', padding: '10px 12px', borderRadius: '8px', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' },
   submitBtn: { backgroundColor: '#8B5CF6', color: '#FFF', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' },
-  msgError: { padding: '10px', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#F87171', borderRadius: '8px', fontSize: '13px', textAlign: 'center', border: '1px solid #EF4444' }
+  resetBtn: { marginTop: '16px', backgroundColor: '#334155', color: '#94A3B8', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' },
+  msgError: { padding: '10px', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#F87171', borderRadius: '8px', fontSize: '13px', textAlign: 'center', border: '1px solid #EF4444' },
 };

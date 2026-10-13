@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import JournalTable from '../components/JournalTable';
+import VideoLesson from '../components/VideoLesson';
 import confetti from 'canvas-confetti';
 
 export default function TeacherPage() {
@@ -15,6 +16,9 @@ export default function TeacherPage() {
   const [groupName, setGroupName] = useState('9-А');
   const [lessonTitle, setLessonTitle] = useState('Введение в Web-разработку');
   const [videoUrl, setVideoUrl] = useState('');
+  const [zoomMeetingNumber, setZoomMeetingNumber] = useState(
+    import.meta.env.VITE_ZOOM_MEETING_NUMBER || ''
+  );
   const [loading, setLoading] = useState(false);
   const [isAutoRotate, setIsAutoRotate] = useState(true);
   const [timeLeft, setTimeLeft] = useState(60);
@@ -36,10 +40,6 @@ export default function TeacherPage() {
   const [selectedGroupFilter, setSelectedGroupFilter] = useState('ALL');
   const [students, setStudents] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
-
-  
-  const lessonRef = useRef(activeLesson);
-  lessonRef.current = activeLesson;
 
   const groupNameRef = useRef(groupName);
   groupNameRef.current = groupName;
@@ -143,6 +143,7 @@ export default function TeacherPage() {
     const currentVideo = videoUrlRef.current;
 
     try {
+      // Деактивируем только уроки ТЕКУЩЕЙ группы (ИСПРАВЛЕНО: раньше гасились все уроки всех групп)
       await supabase
         .from('lessons')
         .update({ is_active: false })
@@ -156,8 +157,8 @@ export default function TeacherPage() {
             pin_code: newPin,
             group_name: currentGroup,
             video_url: currentVideo.trim(),
-            is_active: true
-          }
+            is_active: true,
+          },
         ])
         .select();
 
@@ -173,6 +174,10 @@ export default function TeacherPage() {
   }, []);
 
   const handleStartOnlineCall = async () => {
+    if (!zoomMeetingNumber.trim()) {
+      alert('Укажите Zoom Meeting ID (номер конференции) для онлайн-урока!');
+      return;
+    }
     if (!activeLesson) {
       await generateNewPin();
     }
@@ -263,7 +268,7 @@ export default function TeacherPage() {
         confetti({
           particleCount: 100,
           spread: 70,
-          origin: { y: 0.6 }
+          origin: { y: 0.6 },
         });
 
         if (audioCtx) {
@@ -290,8 +295,8 @@ export default function TeacherPage() {
         question: question.trim(),
         options: options.map((o) => o.trim()),
         correct_option: Number(correctOption),
-        is_active: true
-      }
+        is_active: true,
+      },
     ]);
 
     if (error) {
@@ -314,10 +319,12 @@ export default function TeacherPage() {
     setLoadingHw(false);
   };
 
+  // ИСПРАВЛЕНО: раньше писали в колонку teacher_comment,
+  // а ученик читал teacher_feedback — фидбек никогда не доходил.
   const handleUpdateHwStatus = async (id, status, comment = '') => {
     await supabase
       .from('homeworks')
-      .update({ status, teacher_comment: comment })
+      .update({ status, teacher_feedback: comment })
       .eq('id', id);
 
     fetchHomeworks();
@@ -402,7 +409,7 @@ export default function TeacherPage() {
             <h3 style={{ margin: '0 0 16px 0', color: '#8B5CF6', fontSize: '18px' }}>
               🎯 Настройки и запуск урока
             </h3>
-            
+
             <div style={styles.grid}>
               <div style={styles.inputBox}>
                 <label style={styles.label}>Группа:</label>
@@ -422,21 +429,32 @@ export default function TeacherPage() {
 
             <div style={{ ...styles.inputBox, marginBottom: '16px' }}>
               <label style={styles.label}>🎥 Ссылка на видеоурок (YouTube/MP4):</label>
-              <input 
-                type="text" 
-                placeholder="https://www.youtube.com/watch?v=..." 
-                value={videoUrl} 
-                onChange={(e) => setVideoUrl(e.target.value)} 
-                style={styles.input} 
+              <input
+                type="text"
+                placeholder="https://www.youtube.com/watch?v=..."
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                style={styles.input}
+              />
+            </div>
+
+            <div style={{ ...styles.inputBox, marginBottom: '16px' }}>
+              <label style={styles.label}>🧩 Zoom Meeting ID (для онлайн-урока):</label>
+              <input
+                type="text"
+                placeholder="89563681827"
+                value={zoomMeetingNumber}
+                onChange={(e) => setZoomMeetingNumber(e.target.value)}
+                style={styles.input}
               />
             </div>
 
             <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <input 
-                type="checkbox" 
-                id="autoRotate" 
-                checked={isAutoRotate} 
-                onChange={(e) => setIsAutoRotate(e.target.checked)} 
+              <input
+                type="checkbox"
+                id="autoRotate"
+                checked={isAutoRotate}
+                onChange={(e) => setIsAutoRotate(e.target.checked)}
                 style={{ accentColor: '#8B5CF6', cursor: 'pointer' }}
               />
               <label htmlFor="autoRotate" style={{ color: '#E2E8F0', fontSize: '14px', cursor: 'pointer' }}>
@@ -473,6 +491,17 @@ export default function TeacherPage() {
                 ) : (
                   <span style={{ fontSize: '13px', color: '#4ADE80' }}>🟢 Урок активен</span>
                 )}
+              </div>
+            )}
+
+            {isOnlineCallStarted && zoomMeetingNumber.trim() && (
+              <div style={{ marginTop: '20px' }}>
+                <VideoLesson
+                  roomName={`lesson_${groupName}`}
+                  userName="Учитель IT ADIS"
+                  isTeacher={true}
+                  meetingNumber={zoomMeetingNumber.trim()}
+                />
               </div>
             )}
           </div>
@@ -553,13 +582,13 @@ export default function TeacherPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ ...styles.card, borderWidth: '1px', borderStyle: 'solid', borderColor: '#22C55E' }}>
             <h3 style={{ color: '#22C55E', margin: '0 0 12px 0', fontSize: '18px' }}>➕ Создать новую группу</h3>
-            <form onSubmit={handleCreateGroup} style={{ display: 'flex', gap: '10px' }}>
+            <form onSubmit={handleCreateGroup} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <input
                 type="text"
                 placeholder="Название группы (напр: Python-2026)"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
-                style={styles.input}
+                style={{ ...styles.input, flex: 1, minWidth: '200px' }}
               />
               <button type="submit" style={styles.btnGreen}>
                 Создать
@@ -570,11 +599,15 @@ export default function TeacherPage() {
           <div style={styles.card}>
             <h3 style={{ margin: '0 0 12px 0', color: '#FFF' }}>📋 Список существующих групп:</h3>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              {groups.map((g) => (
-                <div key={g.id || g.name} style={styles.groupBadge}>
-                  📁 {g.name}
-                </div>
-              ))}
+              {groups.length === 0 ? (
+                <p style={{ color: '#94A3B8', fontSize: '13px' }}>Групп пока нет. Создайте первую!</p>
+              ) : (
+                groups.map((g) => (
+                  <div key={g.id || g.name} style={styles.groupBadge}>
+                    📁 {g.name}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -584,7 +617,7 @@ export default function TeacherPage() {
         <div style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
             <h3 style={{ margin: 0, color: '#FFF', fontSize: '18px' }}>👥 Зарегистрированные ученики</h3>
-            
+
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <label style={{ color: '#94A3B8', fontSize: '13px' }}>Фильтр группы:</label>
               <select
@@ -620,7 +653,7 @@ export default function TeacherPage() {
                   {filteredStudents.map((st, index) => (
                     <tr key={st.id || index} style={styles.tr}>
                       <td style={styles.tdLog}>{st.student_code || st.id?.slice(0, 6) || '—'}</td>
-                      <td style={styles.td}>{st.name || 'Без имени'}</td>
+                      <td style={styles.td}>{st.avatar || '🌱'} {st.name || 'Без имени'}</td>
                       <td style={styles.td}>
                         <select
                           value={st.group_name || ''}
@@ -649,7 +682,7 @@ export default function TeacherPage() {
       {activeTab === 'homework' && (
         <div style={{ ...styles.card, borderWidth: '1px', borderStyle: 'solid', borderColor: '#38BDF8' }}>
           <h3 style={{ color: '#38BDF8', margin: '0 0 16px 0', fontSize: '18px' }}>📂 Проверка Домашних Работ</h3>
-          
+
           {loadingHw ? (
             <p style={{ color: '#94A3B8', fontSize: '14px' }}>Загрузка работ...</p>
           ) : homeworks.length === 0 ? (
@@ -658,15 +691,24 @@ export default function TeacherPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {homeworks.map((hw) => (
                 <div key={hw.id} style={styles.hwCard}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 'bold', color: '#FFF', fontSize: '15px' }}>{hw.student_name}</div>
                     <div style={{ color: '#94A3B8', fontSize: '13px', margin: '2px 0' }}>{hw.title}</div>
+                    {hw.comment && (
+                      <div style={{ color: '#FACC15', fontSize: '12px', margin: '2px 0' }}>💬 {hw.comment}</div>
+                    )}
                     <a href={hw.project_url} target="_blank" rel="noreferrer" style={styles.link}>
                       Открыть проект 🔗
                     </a>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{
+                      ...styles.statusLabel,
+                      backgroundColor: hw.status === 'Принято' ? '#166534' : hw.status === 'На доработку' ? '#991B1B' : '#854D0E',
+                    }}>
+                      {hw.status}
+                    </span>
                     <button
                       onClick={() => handleUpdateHwStatus(hw.id, 'Принято', 'Молодец! Задание принято.')}
                       style={{ ...styles.statusBtn, backgroundColor: '#22C55E' }}
@@ -674,7 +716,7 @@ export default function TeacherPage() {
                       Принять ✅
                     </button>
                     <button
-                      onClick={() => handleUpdateHwStatus(hw.id, 'На доработку', 'Исправь ошибки.')}
+                      onClick={() => handleUpdateHwStatus(hw.id, 'На доработку', 'Исправь ошибки и отправь снова.')}
                       style={{ ...styles.statusBtn, backgroundColor: '#EF4444' }}
                     >
                       Доработать ❌
@@ -697,16 +739,16 @@ export default function TeacherPage() {
 }
 
 const styles = {
-  loginCard: { 
-    backgroundColor: '#1E293B', 
-    padding: '32px', 
-    borderRadius: '16px', 
-    borderWidth: '1px', 
-    borderStyle: 'solid', 
-    borderColor: '#334155', 
-    maxWidth: '400px', 
+  loginCard: {
+    backgroundColor: '#1E293B',
+    padding: '32px',
+    borderRadius: '16px',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: '#334155',
+    maxWidth: '400px',
     margin: '60px auto',
-    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)'
+    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
   },
   cabinetHeader: {
     display: 'flex',
@@ -715,23 +757,25 @@ const styles = {
     backgroundColor: '#1E293B',
     padding: '20px 24px',
     borderRadius: '16px',
-    borderWidth: '1px', 
-    borderStyle: 'solid', 
+    borderWidth: '1px',
+    borderStyle: 'solid',
     borderColor: '#334155',
-    marginBottom: '16px'
+    marginBottom: '16px',
+    flexWrap: 'wrap',
+    gap: '10px',
   },
   tabsContainer: {
     display: 'flex',
     gap: '8px',
     marginBottom: '20px',
     overflowX: 'auto',
-    paddingBottom: '4px'
+    paddingBottom: '4px',
   },
   tabBtn: {
     backgroundColor: '#1E293B',
     color: '#94A3B8',
-    borderWidth: '1px', 
-    borderStyle: 'solid', 
+    borderWidth: '1px',
+    borderStyle: 'solid',
     borderColor: '#334155',
     padding: '10px 16px',
     borderRadius: '10px',
@@ -739,83 +783,83 @@ const styles = {
     fontSize: '14px',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
-    transition: '0.2s'
+    transition: '0.2s',
   },
   activeTab: {
     backgroundColor: '#8B5CF6',
     color: '#FFF',
-    borderColor: '#8B5CF6'
+    borderColor: '#8B5CF6',
   },
-  loginBtn: { 
-    backgroundColor: '#FACC15', 
-    color: '#0F172A', 
-    borderWidth: '0px', 
-    padding: '12px', 
-    borderRadius: '8px', 
-    fontWeight: 'bold', 
-    cursor: 'pointer', 
-    fontSize: '15px' 
+  loginBtn: {
+    backgroundColor: '#FACC15',
+    color: '#0F172A',
+    borderWidth: '0px',
+    padding: '12px',
+    borderRadius: '8px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    fontSize: '15px',
   },
   logoutBtn: {
-    backgroundColor: '#334155', 
-    color: '#94A3B8', 
-    borderWidth: '0px', 
-    padding: '8px 14px', 
-    borderRadius: '8px', 
-    cursor: 'pointer', 
+    backgroundColor: '#334155',
+    color: '#94A3B8',
+    borderWidth: '0px',
+    padding: '8px 14px',
+    borderRadius: '8px',
+    cursor: 'pointer',
     fontSize: '13px',
-    fontWeight: '600'
+    fontWeight: '600',
   },
   error: { color: '#EF4444', fontSize: '13px', textAlign: 'center', marginTop: '10px' },
-  card: { 
-    backgroundColor: '#1E293B', 
-    padding: '24px', 
-    borderRadius: '16px', 
-    borderWidth: '1px', 
-    borderStyle: 'solid', 
+  card: {
+    backgroundColor: '#1E293B',
+    padding: '24px',
+    borderRadius: '16px',
+    borderWidth: '1px',
+    borderStyle: 'solid',
     borderColor: '#334155',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
   },
   grid: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', marginBottom: '16px' },
   inputBox: { display: 'flex', flexDirection: 'column', gap: '6px' },
   label: { fontSize: '13px', color: '#94A3B8', fontWeight: '500' },
-  select: { 
-    backgroundColor: '#0F172A', 
-    borderWidth: '1px', 
-    borderStyle: 'solid', 
-    borderColor: '#334155', 
-    padding: '10px 14px', 
-    borderRadius: '8px', 
-    color: '#FFF', 
+  select: {
+    backgroundColor: '#0F172A',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: '#334155',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    color: '#FFF',
     fontSize: '14px',
     outline: 'none',
-    cursor: 'pointer'
+    cursor: 'pointer',
   },
   selectInline: {
-    backgroundColor: '#0F172A', 
-    borderWidth: '1px', 
-    borderStyle: 'solid', 
-    borderColor: '#38BDF8', 
-    padding: '4px 8px', 
-    borderRadius: '6px', 
-    color: '#38BDF8', 
+    backgroundColor: '#0F172A',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: '#38BDF8',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    color: '#38BDF8',
     fontSize: '13px',
     outline: 'none',
     cursor: 'pointer',
-    fontWeight: 'bold'
+    fontWeight: 'bold',
   },
-  input: { 
-    backgroundColor: '#0F172A', 
-    borderWidth: '1px', 
-    borderStyle: 'solid', 
-    borderColor: '#334155', 
-    padding: '10px 14px', 
-    borderRadius: '8px', 
-    color: '#FFF', 
-    fontSize: '14px', 
-    width: '100%', 
+  input: {
+    backgroundColor: '#0F172A',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: '#334155',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    color: '#FFF',
+    fontSize: '14px',
+    width: '100%',
     boxSizing: 'border-box',
-    outline: 'none'
+    outline: 'none',
   },
   btnGreen: {
     backgroundColor: '#22C55E',
@@ -825,7 +869,7 @@ const styles = {
     borderRadius: '8px',
     fontWeight: 'bold',
     cursor: 'pointer',
-    fontSize: '14px'
+    fontSize: '14px',
   },
   pinBtn: { backgroundColor: '#8B5CF6', color: '#FFF', borderWidth: '0px', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' },
   callBtn: { backgroundColor: '#22C55E', color: '#FFF', borderWidth: '0px', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' },
@@ -843,7 +887,8 @@ const styles = {
   tdXp: { padding: '10px', fontSize: '14px', fontWeight: 'bold', color: '#FACC15' },
   randomBtn: { backgroundColor: '#F59E0B', color: '#0F172A', borderWidth: '0px', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
   winnerDisplay: { marginTop: '16px', padding: '16px', backgroundColor: '#0F172A', borderRadius: '8px', textAlign: 'center', fontSize: '20px', borderWidth: '1px', borderStyle: 'solid', borderColor: '#F59E0B' },
-  hwCard: { backgroundColor: '#0F172A', padding: '12px 16px', borderRadius: '10px', borderWidth: '1px', borderStyle: 'solid', borderColor: '#334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  hwCard: { backgroundColor: '#0F172A', padding: '12px 16px', borderRadius: '10px', borderWidth: '1px', borderStyle: 'solid', borderColor: '#334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
   link: { color: '#38BDF8', fontSize: '13px', textDecoration: 'none' },
-  statusBtn: { color: '#FFF', borderWidth: '0px', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }
+  statusLabel: { color: '#FFF', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' },
+  statusBtn: { color: '#FFF', borderWidth: '0px', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' },
 };

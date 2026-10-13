@@ -8,17 +8,17 @@ export default function PinScanner({ onSuccess }) {
 
   const handleVerify = async (e) => {
     e.preventDefault();
-    if (!pin.trim()) return;
+    const cleanPin = pin.trim();
+    if (!cleanPin) return;
 
     setLoading(true);
     setError('');
 
     try {
-    
       const { data: lessons, error: dbError } = await supabase
         .from('lessons')
         .select('*')
-        .eq('pin_code', pin.trim())
+        .eq('pin_code', cleanPin)
         .eq('is_active', true);
 
       if (dbError) {
@@ -43,13 +43,17 @@ export default function PinScanner({ onSuccess }) {
 
   return (
     <form onSubmit={handleVerify} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {error && <div style={{ color: '#F87171', fontSize: '14px', textAlign: 'center' }}>{error}</div>}
+      {error && (
+        <div style={{ color: '#F87171', fontSize: '14px', textAlign: 'center' }}>{error}</div>
+      )}
       <input
         type="text"
-        maxLength="4"
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        maxLength={4}
         placeholder="0000"
         value={pin}
-        onChange={(e) => setPin(e.target.value)}
+        onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
         style={{
           backgroundColor: '#0F172A',
           border: '1px solid #38BDF8',
@@ -60,7 +64,7 @@ export default function PinScanner({ onSuccess }) {
           letterSpacing: '6px',
           textAlign: 'center',
           outline: 'none',
-          fontWeight: 'bold'
+          fontWeight: 'bold',
         }}
       />
       <button
@@ -73,12 +77,12 @@ export default function PinScanner({ onSuccess }) {
           padding: '12px',
           borderRadius: '8px',
           fontWeight: 'bold',
-          cursor: 'pointer'
+          cursor: loading ? 'not-allowed' : 'pointer',
+          opacity: loading ? 0.7 : 1,
         }}
       >
         {loading ? 'Проверка...' : 'Войти по PIN'}
       </button>
     </form>
   );
-
-};
+}

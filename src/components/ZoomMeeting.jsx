@@ -1,13 +1,25 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ZoomMtg } from '@zoom/meetingsdk';
 
-ZoomMtg.setZoomJSLib(`${window.location.origin}/lib`, '/av');
-ZoomMtg.preLoadWasm();
-ZoomMtg.prepareWebSDK();
+// ИСПРАВЛЕНО: единая версия SDK для всего проекта
+const ZOOM_SDK_VERSION = '2.18.2';
 
-const ZoomMeeting = ({ meetingNumber, passWord, userName, signature, sdkKey }) => {  
-  console.log("Zoom Props:", { meetingNumber, userName, signature, sdkKey });
+const ZoomMeeting = ({ meetingNumber, passWord, userName, signature, sdkKey }) => {
+  const initializedRef = useRef(false);
+
   useEffect(() => {
+    if (!meetingNumber || !signature || !sdkKey) {
+      console.error('ZoomMeeting: отсутствуют meetingNumber, signature или sdkKey');
+      return;
+    }
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    // Подключаем CDN Zoom SDK (Web)
+    ZoomMtg.setZoomJSLib(`https://source.zoom.us/${ZOOM_SDK_VERSION}/lib`, '/av');
+    ZoomMtg.preLoadWasm();
+    ZoomMtg.prepareWebSDK();
+
     const zoomRoot = document.getElementById('zmmtg-root');
     if (zoomRoot) {
       zoomRoot.style.display = 'block';
@@ -20,17 +32,17 @@ const ZoomMeeting = ({ meetingNumber, passWord, userName, signature, sdkKey }) =
         console.log('Zoom SDK initialized successfully.');
 
         ZoomMtg.join({
-          meetingNumber:89563681827,
-          userName: userName,
+          meetingNumber: String(meetingNumber),
+          userName: userName || 'Ученик',
           signature: signature,
-        
-          passWord: passWord,
+          sdkKey: sdkKey,
+          passWord: passWord || '',
+          userEmail: '',
           success: (res) => {
             console.log('Successfully joined the meeting', res);
           },
           error: (err) => {
             console.error('Error joining meeting detailed:', err);
-            alert(`Ошибка входа: ${err.errorMessage || JSON.stringify(err)}`);
           },
         });
       },
@@ -39,16 +51,28 @@ const ZoomMeeting = ({ meetingNumber, passWord, userName, signature, sdkKey }) =
       },
     });
 
+    // ИСПРАВЛЕНО: корректный выход из встречи при размонтировании компонента
     return () => {
+      try {
+        if (ZoomMtg && typeof ZoomMtg.leaveMeeting === 'function') {
+          ZoomMtg.leaveMeeting({});
+        }
+      } catch (e) {
+        console.warn('Ошибка при выходе из Zoom:', e);
+      }
       if (zoomRoot) {
         zoomRoot.style.display = 'none';
+        zoomRoot.innerHTML = '';
       }
+      initializedRef.current = false;
     };
   }, [meetingNumber, passWord, userName, signature, sdkKey]);
 
   return (
-    <div className="zoom-meeting-container" style={{ width: '100%', height: '100%' }}>
-    </div>
+    <div
+      className="zoom-meeting-container"
+      style={{ width: '100%', height: '100%' }}
+    />
   );
 };
 

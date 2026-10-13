@@ -1,52 +1,64 @@
 import React, { useEffect, useState } from 'react';
 import { ZoomMtg } from '@zoom/meetingsdk';
 
+const SIGNATURE_SERVER = import.meta.env.VITE_ZOOM_SIGNATURE_SERVER || 'http://localhost:5000';
 
-ZoomMtg.preLoadWasm();
-ZoomMtg.prepareWebSDK();
-
-export default function ZoomEmbedded({ student }) {
+export default function ZoomEmbedded({ student, sdkKey: sdkKeyProp = '' }) {
   const [meetingConfig, setMeetingConfig] = useState({
     meetingNumber: '',
     passWord: '',
     userName: student ? student.name : 'Ученик IT ADIS',
     userEmail: '',
-    sdkKey: 'ВАШ_SDK_KEY', 
-    role: 0 
+    role: 0
   });
-  
+
   const [isInMeeting, setIsInMeeting] = useState(false);
-     
+
   const startMeeting = async (e) => {
     e.preventDefault();
-    
+
+    const sdkKey = sdkKeyProp || import.meta.env.VITE_ZOOM_SDK_KEY;
+    if (!sdkKey) {
+      alert('Не задан Zoom SDK Key (проп sdkKey или VITE_ZOOM_SDK_KEY в .env)');
+      return;
+    }
+
     try {
-      const response = await fetch('https://ваш-сервер.com/api/zoom-signature', {
+      const response = await fetch(`${SIGNATURE_SERVER}/api/zoom-signature`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          meetingNumber: meetingConfig.meetingNumber,
+          meetingNumber: String(meetingConfig.meetingNumber),
           role: meetingConfig.role
         })
       });
-      
+
+      if (!response.ok) {
+        throw new Error(`Сервер подписи ответил ${response.status}`);
+      }
+
       const data = await response.json();
       if (!data.signature) {
         alert('Не удалось получить цифровую подпись от сервера');
         return;
       }
 
-      document.getElementById('zmmtg-root').style.display = 'block';
+      const zoomRoot = document.getElementById('zmmtg-root');
+      if (zoomRoot) zoomRoot.style.display = 'block';
       setIsInMeeting(true);
 
+      ZoomMtg.setZoomJSLib('https://source.zoom.us/2.18.2/lib', '/av');
+      ZoomMtg.preLoadWasm();
+      ZoomMtg.prepareWebSDK();
+
       ZoomMtg.init({
-        leaveUrl: window.location.href,
+        leaveUrl: window.location.origin,
         patchJsMedia: true,
         success: () => {
           ZoomMtg.join({
             signature: data.signature,
-            sdkKey: meetingConfig.sdkKey,
-            meetingNumber: meetingConfig.meetingNumber,
+            sdkKey: sdkKey,
+            meetingNumber: String(meetingConfig.meetingNumber),
             passWord: meetingConfig.passWord,
             userName: meetingConfig.userName,
             userEmail: meetingConfig.userEmail,
@@ -65,6 +77,7 @@ export default function ZoomEmbedded({ student }) {
 
     } catch (err) {
       console.error('Ошибка соединения с сервером подписи:', err);
+      alert(`Ошибка: ${err.message}`);
     }
   };
 

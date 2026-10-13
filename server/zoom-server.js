@@ -1,0 +1,51 @@
+require('dotenv').config({ path: __dirname + '/.env' });
+
+const express = require('express');
+const cors = require('cors');
+const crypto = require('crypto');
+
+const app = express();
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'] }));
+app.use(express.json());
+
+const SDK_KEY = process.env.ZOOM_SDK_KEY || '';
+const SDK_SECRET = process.env.ZOOM_SDK_SECRET || '';
+const PORT = process.env.PORT || 5000;
+const MEETING_NUMBER = '86568978990'; // it adis lesson
+
+const b64url = (input) => Buffer.from(input).toString('base64url');
+
+app.post('/api/zoom-signature', (req, res) => {
+  if (!SDK_KEY || !SDK_SECRET) {
+    return res.status(500).json({ error: 'ZOOM_SDK_KEY / ZOOM_SDK_SECRET не заданы' });
+  }
+
+  const iat = Math.floor(Date.now() / 1000) - 30;
+  const exp = iat + 60 * 60 * 2;
+
+  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = b64url(JSON.stringify({
+    sdkKey: SDK_KEY,
+    appKey: SDK_KEY,
+    mn: MEETING_NUMBER,
+    role: 0,
+    iat,
+    exp,
+    tokenExp: exp,
+  }));
+
+  const signature = crypto
+    .createHmac('sha256', SDK_SECRET)
+    .update(`${header}.${payload}`)
+    .digest('base64url');
+
+  res.json({
+    signature: `${header}.${payload}.${signature}`,
+    sdkKey: SDK_KEY,
+    meetingNumber: MEETING_NUMBER,
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`✅ Zoom signature server запущен на http://localhost:${PORT}`);
+});

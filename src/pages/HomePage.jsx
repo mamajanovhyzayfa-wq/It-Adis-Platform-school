@@ -73,7 +73,7 @@ export default function HomePage({ student, setStudent }) {
             </div>
           )}
 
-          <StudentForm onRegisterSuccess={handleStudentLogin} />
+          <StudentForm onLogin={handleStudentLogin} />
 
           {student && (
             <>

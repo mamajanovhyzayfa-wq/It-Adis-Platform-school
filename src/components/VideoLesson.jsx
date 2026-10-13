@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import ZoomMeeting from './ZoomMeeting';
 import { supabase } from '../supabaseClient'; 
-export default function VideoLesson({ 
-  roomName = 'General', 
-  userName = 'Участник', 
-  isTeacher = false 
+export default function VideoLesson({
+  roomName = 'General',
+  userName = 'Участник',
+  isTeacher = false,
+  meetingNumber: meetingNumberProp = ''
 }) {
   const [meetingData, setMeetingData] = useState({
     signature: '',
@@ -13,11 +14,20 @@ export default function VideoLesson({
     error: null
   });
 
-  const meetingNumber = "12345678901"; 
-  const passWord = "123"; 
-  const role = isTeacher ? 1 : 0; 
+  const meetingNumber = String(meetingNumberProp).trim();
+  const passWord = '';
+  const role = isTeacher ? 1 : 0;
 
   useEffect(() => {
+    if (!meetingNumber) {
+      setMeetingData(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Не передан meetingNumber (Meeting ID) конференции'
+      }));
+      return;
+    }
+
     async function fetchZoomSignature() {
       try {
         const { data, error } = await supabase.functions.invoke('generate-zoom-signature', {
@@ -25,6 +35,9 @@ export default function VideoLesson({
         });
 
         if (error) throw error;
+        if (!data || !data.signature || !data.sdkKey) {
+          throw new Error('Edge-функция вернула данные без signature/sdkKey');
+        }
 
         setMeetingData({
           signature: data.signature,

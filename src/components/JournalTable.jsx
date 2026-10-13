@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import * as XLSX from 'xlsx';
 
@@ -7,22 +7,21 @@ export default function JournalTable() {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchJournalData();
-  }, []);
-
-  const fetchJournalData = async () => {
+  const fetchJournalData = useCallback(async () => {
     setLoading(true);
 
-    const { data: studentsData } = await supabase
+    const { data: studentsData, error: studentsError } = await supabase
       .from('students')
       .select('name, group_name')
       .order('name', { ascending: true });
 
-    const { data: attendanceData } = await supabase
+    const { data: attendanceData, error: attendanceError } = await supabase
       .from('attendance')
       .select('*')
       .order('created_at', { ascending: false });
+
+    if (studentsError) console.error(studentsError);
+    if (attendanceError) console.error(attendanceError);
 
     if (studentsData && studentsData.length > 0) {
       const studentNames = Array.from(new Set(studentsData.map((s) => s.name || 'Без имени')));
@@ -30,11 +29,17 @@ export default function JournalTable() {
     } else if (attendanceData && attendanceData.length > 0) {
       const visitedNames = Array.from(new Set(attendanceData.map((a) => a.student_name)));
       setStudents(visitedNames);
+    } else {
+      setStudents([]);
     }
 
     setAttendance(attendanceData || []);
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchJournalData();
+  }, [fetchJournalData]);
 
   const exportToExcel = () => {
     const dataForExcel = students.map((studentName, idx) => {
@@ -48,7 +53,7 @@ export default function JournalTable() {
         '№': idx + 1,
         'Имя ученика': studentName,
         'Всего посещений': visitsCount,
-        'Последняя активность': lastVisit
+        'Последняя активность': lastVisit,
       };
     });
 
@@ -62,7 +67,14 @@ export default function JournalTable() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px',
+        }}
+      >
         <h3 style={{ margin: 0, color: '#FFF', fontSize: '18px' }}>📊 Журнал посещаемости</h3>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={exportToExcel} style={styles.excelBtn} disabled={students.length === 0}>
@@ -125,7 +137,7 @@ const styles = {
     borderRadius: '6px',
     cursor: 'pointer',
     fontWeight: 'bold',
-    fontSize: '12px'
+    fontSize: '12px',
   },
   refreshBtn: {
     backgroundColor: '#334155',
@@ -137,46 +149,31 @@ const styles = {
     borderRadius: '6px',
     cursor: 'pointer',
     fontWeight: 'bold',
-    fontSize: '12px'
+    fontSize: '12px',
   },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    textAlign: 'left'
-  },
+  table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left' },
   th: {
     padding: '10px',
     borderBottomWidth: '2px',
     borderBottomStyle: 'solid',
     borderBottomColor: '#334155',
     color: '#94A3B8',
-    fontSize: '13px'
+    fontSize: '13px',
   },
   tr: {
     borderBottomWidth: '1px',
     borderBottomStyle: 'solid',
-    borderBottomColor: '#334155'
+    borderBottomColor: '#334155',
   },
-  tdName: {
-    padding: '10px',
-    fontSize: '14px',
-    fontWeight: 'bold',
-    color: '#FFF'
-  },
-  tdCount: {
-    padding: '10px'
-  },
-  tdDate: {
-    padding: '10px',
-    fontSize: '13px',
-    color: '#94A3B8'
-  },
+  tdName: { padding: '10px', fontSize: '14px', fontWeight: 'bold', color: '#FFF' },
+  tdCount: { padding: '10px' },
+  tdDate: { padding: '10px', fontSize: '13px', color: '#94A3B8' },
   badge: {
     backgroundColor: '#0284C7',
     color: '#FFF',
     padding: '3px 8px',
     borderRadius: '12px',
     fontSize: '12px',
-    fontWeight: 'bold'
-  }
+    fontWeight: 'bold',
+  },
 };

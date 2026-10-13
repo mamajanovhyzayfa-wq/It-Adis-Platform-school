@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
 export default function NotificationBell({ studentName = 'Ученик' }) {
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const channelsRef = useRef([]);
 
-  const playNotifSound = () => {
+  const playNotifSound = useCallback(() => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -18,21 +19,25 @@ export default function NotificationBell({ studentName = 'Ученик' }) {
       gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
       osc.start();
       osc.stop(ctx.currentTime + 0.3);
-    } catch (e) {}
-  };
+    } catch (e) {
+      /* ignore */
+    }
+  }, []);
 
-  const addNotification = (text, type = 'info') => {
-    const newNotif = {
-      id: Date.now(),
-      text,
-      type,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      read: false
-    };
-    setNotifications((prev) => [newNotif, ...prev]);
-    setUnreadCount((prev) => prev + 1);
-    playNotifSound();
-  };
+  const addNotification = useCallback(
+    (text) => {
+      const newNotif = {
+        id: Date.now() + Math.random(),
+        text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        read: false,
+      };
+      setNotifications((prev) => [newNotif, ...prev]);
+      setUnreadCount((prev) => prev + 1);
+      playNotifSound();
+    },
+    [playNotifSound]
+  );
 
   useEffect(() => {
     const hwChannel = supabase
@@ -43,8 +48,7 @@ export default function NotificationBell({ studentName = 'Ученик' }) {
         (payload) => {
           if (payload.new && payload.new.student_name === studentName) {
             addNotification(
-              `📝 Домашка "${payload.new.title}": статус изменен на "${payload.new.status}"!`,
-              'success'
+              `📝 Домашка "${payload.new.title}": статус изменен на "${payload.new.status}"!`
             );
           }
         }
@@ -58,28 +62,31 @@ export default function NotificationBell({ studentName = 'Ученик' }) {
         { event: 'INSERT', schema: 'public', table: 'quizzes' },
         (payload) => {
           if (payload.new && payload.new.is_active) {
-            addNotification('🧠 Учитель опубликовал новый вопрос на закрепление!', 'warning');
+            addNotification('🧠 Учитель опубликовал новый вопрос на закрепление!');
           }
         }
       )
       .subscribe();
 
+    channelsRef.current = [hwChannel, quizChannel];
+
     return () => {
-      supabase.removeChannel(hwChannel);
-      supabase.removeChannel(quizChannel);
+      channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
+      channelsRef.current = [];
     };
-  }, [studentName]);
+  }, [studentName, addNotification]);
 
   const toggleOpen = () => {
-    setIsOpen(!isOpen);
-    if (!isOpen) {
-      setUnreadCount(0);
-    }
+    setIsOpen((prev) => {
+      const next = !prev;
+      if (next) setUnreadCount(0);
+      return next;
+    });
   };
 
   return (
     <div style={styles.wrapper}>
-      <button onClick={toggleOpen} style={styles.bellBtn}>
+      <button onClick={toggleOpen} style={styles.bellBtn} aria-label="Уведомления">
         🔔
         {unreadCount > 0 && <span style={styles.badge}>{unreadCount}</span>}
       </button>
@@ -87,8 +94,12 @@ export default function NotificationBell({ studentName = 'Ученик' }) {
       {isOpen && (
         <div style={styles.dropdown}>
           <div style={styles.dropHeader}>
-            <span style={{ fontWeight: 'bold', color: '#FFF', fontSize: '14px' }}>Уведомления</span>
-            <span style={{ color: '#94A3B8', fontSize: '12px' }}>{notifications.length} всего</span>
+            <span style={{ fontWeight: 'bold', color: '#FFF', fontSize: '14px' }}>
+              Уведомления
+            </span>
+            <span style={{ color: '#94A3B8', fontSize: '12px' }}>
+              {notifications.length} всего
+            </span>
           </div>
 
           <div style={styles.list}>
@@ -110,10 +121,7 @@ export default function NotificationBell({ studentName = 'Ученик' }) {
 }
 
 const styles = {
-  wrapper: {
-    position: 'relative',
-    display: 'inline-block'
-  },
+  wrapper: { position: 'relative', display: 'inline-block' },
   bellBtn: {
     backgroundColor: '#1E293B',
     border: '1px solid #334155',
@@ -122,7 +130,7 @@ const styles = {
     padding: '8px 12px',
     borderRadius: '10px',
     cursor: 'pointer',
-    position: 'relative'
+    position: 'relative',
   },
   badge: {
     position: 'absolute',
@@ -134,7 +142,7 @@ const styles = {
     fontWeight: 'bold',
     borderRadius: '10px',
     padding: '2px 6px',
-    border: '2px solid #0F172A'
+    border: '2px solid #0F172A',
   },
   dropdown: {
     position: 'absolute',
@@ -146,38 +154,29 @@ const styles = {
     borderRadius: '12px',
     boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
     zIndex: 100,
-    overflow: 'hidden'
+    overflow: 'hidden',
   },
   dropHeader: {
     padding: '12px 16px',
     backgroundColor: '#0F172A',
     borderBottom: '1px solid #334155',
     display: 'flex',
-    justify: 'space-between',
-    alignItems: 'center'
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  list: {
-    maxHeight: '260px',
-    overflowY: 'auto'
-  },
+  list: { maxHeight: '260px', overflowY: 'auto' },
   empty: {
     padding: '20px',
     textAlign: 'center',
     color: '#94A3B8',
-    fontSize: '13px'
+    fontSize: '13px',
   },
   item: {
     padding: '10px 14px',
     borderBottom: '1px solid #334155',
     fontSize: '13px',
-    color: '#E2E8F0'
+    color: '#E2E8F0',
   },
-  itemText: {
-    lineHeight: '1.4'
-  },
-  itemTime: {
-    fontSize: '10px',
-    color: '#64748B',
-    marginTop: '4px'
-  }
+  itemText: { lineHeight: '1.4' },
+  itemTime: { fontSize: '10px', color: '#64748B', marginTop: '4px' },
 };
